@@ -96,6 +96,24 @@ export const sourceRoutes = new Elysia({ prefix: '/sources' })
     },
     { params: t.Object({ id: t.Integer() }), body: t.Partial(body) },
   )
+  .delete(
+    '/:id',
+    async ({ params, status }) => {
+      const [current] = await db.select().from(sources).where(eq(sources.id, params.id))
+      if (!current) return status(404, { error: 'not_found' })
+      // Sources with responses must stay so historical reports remain intact; disable those instead.
+      const [used] = await db
+        .select({ id: responseSources.responseId })
+        .from(responseSources)
+        .where(eq(responseSources.sourceId, current.id))
+        .limit(1)
+      if (used) return status(409, { error: 'has_responses' })
+      if (current.active && (await isLastActive(sources, current.id))) return status(422, { error: 'last_active' })
+      await db.delete(sources).where(eq(sources.id, current.id))
+      return { ok: true }
+    },
+    { params: t.Object({ id: t.Integer() }) },
+  )
   .put(
     '/order',
     async ({ body, status }) => {
